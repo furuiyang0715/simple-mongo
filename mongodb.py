@@ -1,0 +1,151 @@
+import pymongo
+import urllib.parse
+import logging
+
+from pymongo.errors import CollectionInvalid
+
+
+class SysException(Exception):
+    def __init__(self, *args, **kwargs):
+        Exception.__init__(self, *args, **kwargs)
+
+
+class MyMongoDB:
+
+    mdb = None
+
+    def __init__(self, conf):
+        self.logger = logging.getLogger(__name__)
+        try:
+            password = urllib.parse.quote(conf['password'])
+        except Exception as e:
+            raise SysException(e)
+
+        if conf['user'] == '':
+            conn_string = 'mongodb://' + \
+                            conf['host'] + ':' + \
+                            conf['port'] + '/'
+        else:
+            conn_string = 'mongodb://' + \
+                            conf['user'] + ':' + \
+                            password + '@' + \
+                            conf['host'] + ':' + \
+                            conf['port'] + '/'
+        try:
+            self.mdb = pymongo.MongoClient(conn_string, connect=False)
+        except Exception as e:
+            raise SysException(e)
+
+    def get_db(self, db_name):
+        try:
+            db = self.mdb[db_name]
+        except:
+            try:
+                db = self.mdb.get_database(db_name)
+            except Exception as e:
+                raise SysException(e)
+
+        return db
+
+    def get_coll(self, coll_name, db_name):
+        db = None
+
+        try:
+            db = self.get_db(db_name)
+        except Exception as e:
+            SysException(e)
+
+        try:
+            db.create_collection(coll_name)
+        except CollectionInvalid as e:
+            self.logger.info(str(e))
+        except Exception as e:
+            raise SysException(e)
+
+        coll = db[coll_name]
+
+        return coll
+
+    def write_log_pos(self, last_pos, cur_pos):
+        coll = self.get_coll('pos_log', "datacenter")
+        try:
+            doc = list(coll.find())
+        except Exception as e:
+            raise SysException(e)
+
+        if doc:  # write for the first time
+            try:
+                self.logger.info("开始更新日志结构： ")
+                # coll.replace_one(last_pos, cur_pos)
+                coll.update(last_pos, cur_pos, upsert=True)
+
+            except Exception as e:
+                raise SysException(e)
+        else:  # rewrite
+            try:
+                coll.insert_one(cur_pos)
+            except Exception as e:
+                raise SysException(e)
+
+    def get_log_pos(self):
+        coll = self.get_coll('pos_log', "datacenter")
+        try:
+            last_log = coll.find_one()  # pos_log 表格里始终只有一条数据
+        except Exception as e:
+            raise SysException(e)
+
+        return last_log if last_log else dict()
+
+    def insert(self, doc, schema, collection):
+        coll = self.get_coll(collection, schema)
+
+        try:
+            coll.insert_one(doc)
+        except Exception as e:
+            raise SysException(e)
+
+    def update(self, doc, schema, collection, primary_key):
+        coll = self.get_coll(collection, schema)
+
+        try:
+            coll.replace_one(primary_key, doc)
+        except Exception as e:
+            raise SysException(e)
+
+    def delete(self, schema, collection, doc=None, primary_key=None):
+        coll = self.get_coll(collection, schema)
+
+        if primary_key is None:
+            try:
+                coll.delete_one(doc)
+            except Exception as e:
+                raise SysException(e)
+        else:
+            try:
+                self.logger.debug('try to delete doc with key: ' + str(primary_key))
+                result = coll.delete_one(primary_key)
+                self.logger.debug('delete result: ' + str(result.deleted_count))
+            except Exception as e:
+                raise SysException(e)
+
+    def drop_db(self, db_name):
+        if db_name in self.mdb.database_names():
+            try:
+                self.mdb.drop_database(db_name)
+            except Exception as e:
+                raise SysException(e)
+
+    def gen_count(self, coll):
+        try:
+            count = coll.find().count()
+        except Exception as e:
+            raise SysException(e)
+        return count
+
+    def calibration_last_location(self, last_pos, table_name_list):
+        for table_name in table_name_list:
+            coll = self.get_coll(table_name, "datacenter")
+            count = self.gen_count(coll)
+            if count != last_pos.get(table_name):
+                last_pos.update({table_name: count})
+        return last_pos
