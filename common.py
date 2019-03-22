@@ -2,13 +2,13 @@
 
 import copy
 import time
-import pickle
 import datetime
 import decimal
 import pymysql
 import configparser
 import logging.config
 from mongodb import MyMongoDB
+from tables import tables
 
 config = configparser.ConfigParser()
 config.read('./conf/config.ini')
@@ -72,28 +72,23 @@ class SyncData:
         if not isinstance(table_name_list, list):
             table_name_list = [table_name_list]
 
-        query_sql = """select count(*) from {};"""
-
-        _res_dict = dict()
+        res_dict = dict()
+        query_sql = """select table_schema,table_name,table_rows from information_schema.tables where table_schema='datacenter' order by table_rows desc;"""
 
         try:
             with connection.cursor() as cursor:
-                for table_name in table_name_list:
-                    q_sql = query_sql.format(table_name)
-                    cursor.execute(q_sql)
-                    res = cursor.fetchall()
-
-                    try:
-                        table_length = res[0][0]
-                    except:
-                        raise
-
-                    _res_dict.update({table_name: table_length})
+                cursor.execute(query_sql)
+                res = cursor.fetchall()
+                # print(res)
+                # print(type(res))
+                for j in res:
+                    if j[1] in table_name_list:
+                        res_dict.update({j[1]: j[2]})
         except Exception:
             raise
         finally:
             connection.commit()
-        return _res_dict
+        return res_dict
 
     def generate_sql_table_datas_list(self, connection, table_name, name_list, pos):
         try:
@@ -159,23 +154,21 @@ class SyncData:
 
         logger.info("插入数据成功 ！, {}".format(res))
 
-    def gen_sql_table_name_list(self, connection):
-        query_sql ="""
-        select table_name from information_schema.tables where table_schema="{}";
-        """.format(self.mysql_DBname)
-        sql_table_name_list = list()
-        try:
-            with connection.cursor() as cursor:
-                cursor.execute(query_sql)
-                res = cursor.fetchall()
-                for column in res:
-                    sql_table_name_list.append(column[0])
-
-        except Exception:
-            raise
-        finally:
-            connection.commit()
-        return sql_table_name_list
+    # def gen_sql_table_name_list(self, connection):
+    #     query_sql ="""select table_name from information_schema.tables where table_schema="{}";""".format(self.mysql_DBname)
+    #     sql_table_name_list = list()
+    #     try:
+    #         with connection.cursor() as cursor:
+    #             cursor.execute(query_sql)
+    #             res = cursor.fetchall()
+    #             for column in res:
+    #                 sql_table_name_list.append(column[0])
+    #
+    #     except Exception:
+    #         raise
+    #     finally:
+    #         connection.commit()
+    #     return sql_table_name_list
 
     def do_process(self, last_pos, cur_pos, table_name_list):
         conn = self.generate_mysqlconnection()
@@ -215,42 +208,8 @@ class SyncData:
     def sync_data(self):
         conn = self.generate_mysqlconnection()
 
-        sql_table_name_list = self.gen_sql_table_name_list(conn)
-        # print(sql_table_name_list)
-        # sql_table_name_list = ['comcn_actualcontroller', 'comcn_balancesheet', 'comcn_balancesheetall_jy',
-        #                        'comcn_bankassetsliability']
-        sql_table_name_list = [
-            'comcn_actualcontroller', 'comcn_balancesheet', 'comcn_balancesheetall_jy', 'comcn_bankassetsliability',
-            'comcn_bankincomeexpense', 'comcn_bankindiconst', 'comcn_bankloan', 'comcn_bankregulator',
-            'comcn_cashflowstatement',
-            'comcn_cashflowstatementall_jy', 'comcn_coconcept', 'comcn_conceptlist', 'comcn_controllingshareholders',
-            'comcn_dindicesforvaluation', 'comcn_dividend', 'comcn_dividendprogress', 'comcn_embeddedvalue',
-            'comcn_embeddedvaluechange', 'comcn_embeddedvalueindex', 'comcn_equitychangesstatement',
-             'comcn_executivesholdings',
-             'comcn_exgindustry', 'comcn_financespecialindex', 'comcn_financespecialindexic', 'comcn_financespecialindexsc',
-             'comcn_financialreportauditingopinion', 'comcn_fsderiveddata', 'comcn_fspecialindicators',
-             'comcn_guaranteedetail',
-             'comcn_incomestatement', 'comcn_incomestatementall_jy', 'comcn_issuanceexamination', 'comcn_leaderposition',
-             'comcn_maindatanew', 'comcn_mainoperincome', 'comcn_mainquarterdata', 'comcn_mainshlistnew',
-             'comcn_managersstockalteration',
-             'comcn_msecufinance', 'comcn_nonrecurringevent', 'comcn_performanceforecast', 'comcn_performanceletters',
-             'comcn_qcashflowstatement', 'comcn_qfinancialindex', 'comcn_qincomestatement', 'comcn_relatedsh',
-             'comcn_reservereportdate',
-             'comcn_rewardstat', 'comcn_sharefp', 'comcn_sharefpsta', 'comcn_sharesfloatingschedule', 'comcn_sharestru',
-             'comcn_stockholdingst', 'comcn_violationhalding', 'const_areacode', 'const_hksecumain', 'const_industry',
-             'const_industrytype', 'const_jydbdeleterec', 'const_keywords', 'const_newsconst', 'const_personal',
-             'const_product',
-             'const_secumain', 'const_secumainall', 'const_systemconst', 'const_tradingday', 'const_ussecumain',
-             'derived_institution_detail',
-             'derived_institution_summary', 'economic_gdp', 'economic_moneysupply', 'futures_basic',
-             'hkland_historycashflow', 'hkland_historytradestat', 'hkland_shares', 'index_basicinfo',
-             'index_indexcomponentsweight', 'index_indexprepcomponent', 'index_quot_day', 'index_swsindexcw',
-             'index_sywgindexquote',
-             'index_weight', 'news_secu', 'risk_data', 'stk_7percentchange', 'stk_abbrchangeserial', 'stk_business',
-             'stk_codechange',
-             'stk_codechangeserial', 'stk_liststatus', 'stk_quot_day', 'stk_quot_idx', 'stk_quotidxwind_day',
-             'stk_quotori_day', 'stk_secuchange',
-             'stk_specialnotice', 'stk_specialtrade', 'trans_valuations']
+        # sql_table_name_list = self.gen_sql_table_name_list(conn)
+        sql_table_name_list = tables
 
         cur_pos = self.generate_sql_table_length(conn, sql_table_name_list)
         logger.info(f"当前的 pos 信息是：{cur_pos} ")  # no ObjectId 从 mysql 中查询出的
@@ -280,23 +239,30 @@ class SyncData:
 
         self.mongo.write_log_pos(last_pos1, last_pos)
 
-
-if __name__ == '__main__':
-    logger.info("------------------------------------------------------")
-    logger.info("------------------------------------------------------")
-    logger.info('开始同步数据啦')
-
+if __name__ == "__main__":
     mongo = MyMongoDB(config['mongodb'])
     rundemo = SyncData(mongo)
+    con = rundemo.generate_mysqlconnection()
+    print(rundemo.generate_sql_table_length(con, tables))
 
-    start_ = time.time()
 
-    try:
-        rundemo.sync_data()
-    except Exception as e:
-        logger.debug(f"同步失败， 失败的原因是：{e} ")
 
-    end_ = time.time()
-    logger.info(f'同步数据结束, 本次同步所用时间 {(end_ - start_) / 60} min')
-    logger.info("======================================================")
-    logger.info("======================================================")
+# if __name__ == '__main__':
+#     logger.info("------------------------------------------------------")
+#     logger.info("------------------------------------------------------")
+#     logger.info('开始同步数据啦')
+#
+#     mongo = MyMongoDB(config['mongodb'])
+#     rundemo = SyncData(mongo)
+#
+#     start_ = time.time()
+#
+#     try:
+#         rundemo.sync_data()
+#     except Exception as e:
+#         logger.debug(f"同步失败， 失败的原因是：{e} ")
+#
+#     end_ = time.time()
+#     logger.info(f'同步数据结束, 本次同步所用时间 {(end_ - start_) / 60} min')
+#     logger.info("======================================================")
+#     logger.info("======================================================")
