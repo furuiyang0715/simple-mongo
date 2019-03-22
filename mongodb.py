@@ -58,7 +58,8 @@ class MyMongoDB:
         try:
             db.create_collection(coll_name)
         except CollectionInvalid as e:
-            self.logger.info(str(e))
+            # self.logger.info(str(e))
+            pass
         except Exception as e:
             raise SysException(e)
 

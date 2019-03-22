@@ -72,23 +72,28 @@ class SyncData:
         if not isinstance(table_name_list, list):
             table_name_list = [table_name_list]
 
-        res_dict = dict()
-        query_sql = """select table_schema,table_name,table_rows from information_schema.tables where table_schema='datacenter' order by table_rows desc;"""
+        query_sql = """select count(*) from {};"""
+
+        _res_dict = dict()
 
         try:
             with connection.cursor() as cursor:
-                cursor.execute(query_sql)
-                res = cursor.fetchall()
-                # print(res)
-                # print(type(res))
-                for j in res:
-                    if j[1] in table_name_list:
-                        res_dict.update({j[1]: j[2]})
+                for table_name in table_name_list:
+                    q_sql = query_sql.format(table_name)
+                    cursor.execute(q_sql)
+                    res = cursor.fetchall()
+
+                    try:
+                        table_length = res[0][0]
+                    except:
+                        raise
+
+                    _res_dict.update({table_name: table_length})
         except Exception:
             raise
         finally:
             connection.commit()
-        return res_dict
+        return _res_dict
 
     def generate_sql_table_datas_list(self, connection, table_name, name_list, pos):
         try:
@@ -141,9 +146,11 @@ class SyncData:
                 for j in yield_list:
                     j = self.check_each_sql_table_data(j)
                     j_list.append(j)
-                j_set = set(j_list)
-                if len(j_set) != len(j_list):
-                    raise SystemError("批量数据中存在至少两个相同的数目，请进行检查 ...")
+
+                # Error: unhashable type: 'dict'
+                # j_set = set(j_list)
+                # if len(j_set) != len(j_list):
+                #     raise SystemError("批量数据中存在至少两个相同的数目，请进行检查 ...")
                 # j_list 中有重复元素 会报错： batch op errors occurred
                 # 参考： https://stackoverflow.com/questions/38361916/pymongo-insert-many-bulkwriteerror
                 res = mongo_collection.insert_many(j_list)
@@ -180,17 +187,21 @@ class SyncData:
 
             elif cur_pos.get(table_name) < last_pos.get(table_name):
                 logger.info("{} 当前数据库可能存在删除操作".format(table_name))
+                logger.info(f"{table_name} 数据库上次的 pos 为 {last_pos.get(table_name)} 当前的 pos 为 {cur_pos.get(table_name)}")
 
                 try:
                     self.mongo.get_coll(table_name, "datacenter").drop()
+                    logger.info(f"数据库 {table_name} 被drop掉啦")
+                    logger.info("  ")
                     last_pos[table_name] = -1
                     cur_pos[table_name] = -1
-                except Exception:
-                    raise Exception
+                except Exception as e:
+                    logger.info(f"drop 掉 table 时出现了异常: {e}")
+                    raise SystemError(e)
                 continue
 
             else:
-                logger.info("开始插入更新数据")
+                logger.info(f"{table_name} 表开始插入更新数据")
                 pos = last_pos.get(table_name)
                 if (not pos) or (pos == -1):
                     pos = 0
@@ -239,30 +250,30 @@ class SyncData:
 
         self.mongo.write_log_pos(last_pos1, last_pos)
 
-if __name__ == "__main__":
-    mongo = MyMongoDB(config['mongodb'])
-    rundemo = SyncData(mongo)
-    con = rundemo.generate_mysqlconnection()
-    print(rundemo.generate_sql_table_length(con, tables))
-
-
-
-# if __name__ == '__main__':
-#     logger.info("------------------------------------------------------")
-#     logger.info("------------------------------------------------------")
-#     logger.info('开始同步数据啦')
-#
+# if __name__ == "__main__":
 #     mongo = MyMongoDB(config['mongodb'])
 #     rundemo = SyncData(mongo)
-#
-#     start_ = time.time()
-#
-#     try:
-#         rundemo.sync_data()
-#     except Exception as e:
-#         logger.debug(f"同步失败， 失败的原因是：{e} ")
-#
-#     end_ = time.time()
-#     logger.info(f'同步数据结束, 本次同步所用时间 {(end_ - start_) / 60} min')
-#     logger.info("======================================================")
-#     logger.info("======================================================")
+#     con = rundemo.generate_mysqlconnection()
+#     print(rundemo.generate_sql_table_length(con, tables))
+
+
+if __name__ == '__main__':
+    logger.info("  "*1000)
+    logger.info("  "*1000)
+    sync_moment = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    logger.info(f'当前时间是 {sync_moment}  开始同步数据啦')
+
+    mongo = MyMongoDB(config['mongodb'])
+    rundemo = SyncData(mongo)
+
+    start_ = time.time()
+
+    try:
+        rundemo.sync_data()
+    except Exception as e:
+        logger.debug(f"同步失败， 失败的原因是：{e} ")
+
+    end_ = time.time()
+    logger.info(f'同步数据结束, 本次同步所用时间 {round((end_ - start_) / 60, 2)} min')
+    logger.info("  " * 1000)
+    logger.info("  " * 1000)
