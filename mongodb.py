@@ -4,6 +4,9 @@ import logging
 
 from pymongo.errors import CollectionInvalid
 
+logging.config.fileConfig('conf/logging.conf')
+logger = logging.getLogger('mongodb')
+
 
 class SysException(Exception):
     def __init__(self, *args, **kwargs):
@@ -15,7 +18,8 @@ class MyMongoDB:
     mdb = None
 
     def __init__(self, conf):
-        self.logger = logging.getLogger(__name__)
+        # self.logger = logging.getLogger(__name__)
+        self.logger = logger
         try:
             password = urllib.parse.quote(conf['password'])
         except Exception as e:
@@ -34,6 +38,7 @@ class MyMongoDB:
         try:
             self.mdb = pymongo.MongoClient(conn_string, connect=False)
         except Exception as e:
+            self.logger.warning(f'创建 pymongo 连接失败， 失败的原因是： {e}')
             raise SysException(e)
 
     def get_db(self, db_name):
@@ -43,6 +48,7 @@ class MyMongoDB:
             try:
                 db = self.mdb.get_database(db_name)
             except Exception as e:
+                self.logger.warning(f'创建 {db_name} 数据库连接失败， 失败的原因是 {e}')
                 raise SysException(e)
 
         return db
@@ -53,14 +59,17 @@ class MyMongoDB:
         try:
             db = self.get_db(db_name)
         except Exception as e:
+            self.logger.warning(f'创建 {db_name}.{coll_name} 集合连接失败， 失败的原因是 {e}')
             SysException(e)
 
         try:
             db.create_collection(coll_name)
         except CollectionInvalid as e:
+            # 这里不再 logger 因为 已经存在的时候会打印 没必要 ...
             # self.logger.info(str(e))
             pass
         except Exception as e:
+            self.logger.warning(f'创建 {db_name}.{coll_name} 集合连接失败， 失败的原因是 {e}')
             raise SysException(e)
 
         coll = db[coll_name]
@@ -72,6 +81,7 @@ class MyMongoDB:
         try:
             doc = list(coll.find())
         except Exception as e:
+            self.logger.warning(f'写入 log_pos 失败，失败的原因是 {e}')
             raise SysException(e)
 
         if doc:  # write for the first time
@@ -81,11 +91,13 @@ class MyMongoDB:
                 coll.update(last_pos, cur_pos, upsert=True)
 
             except Exception as e:
+                self.logger.warning(f'更新日志结构失败，原因 {e}')
                 raise SysException(e)
         else:  # rewrite
             try:
                 coll.insert_one(cur_pos)
             except Exception as e:
+                self.logger.warning(f'首次写入 log_pos 失败，原因 {e}')
                 raise SysException(e)
 
     def get_log_pos(self):
@@ -93,6 +105,7 @@ class MyMongoDB:
         try:
             last_log = coll.find_one()  # pos_log 表格里始终只有一条数据
         except Exception as e:
+            self.logger.warning(f"获取 log_pos 信息失败，失败原因 {e}")
             raise SysException(e)
 
         return last_log if last_log else dict()
@@ -103,6 +116,8 @@ class MyMongoDB:
         try:
             coll.insert_one(doc)
         except Exception as e:
+            self.logger.warning(f"insert 失败： {schema}.{collection}-->{doc}")
+            self.logger.warning(f"失败原因： {e}")
             raise SysException(e)
 
     def update(self, doc, schema, collection, primary_key):
@@ -111,6 +126,8 @@ class MyMongoDB:
         try:
             coll.replace_one(primary_key, doc)
         except Exception as e:
+            self.logger.warning(f'update 失败: {schema}.{collection}-->{doc}')
+            self.logger.warning(f"失败原因： {e}")
             raise SysException(e)
 
     def delete(self, schema, collection, doc=None, primary_key=None):
@@ -120,6 +137,8 @@ class MyMongoDB:
             try:
                 coll.delete_one(doc)
             except Exception as e:
+                self.logger.warning(f'delete 失败：{schema}.{collection}-->{doc}')
+                self.logger.warning(f"失败原因： {e}")
                 raise SysException(e)
         else:
             try:
@@ -127,6 +146,8 @@ class MyMongoDB:
                 result = coll.delete_one(primary_key)
                 self.logger.debug('delete result: ' + str(result.deleted_count))
             except Exception as e:
+                self.logger.warning(f'无 primary_key delete 失败：{schema}.{collection}-->{doc}')
+                self.logger.warning(f"失败原因： {e}")
                 raise SysException(e)
 
     def drop_db(self, db_name):
@@ -134,12 +155,14 @@ class MyMongoDB:
             try:
                 self.mdb.drop_database(db_name)
             except Exception as e:
+                self.logger.warning(f"drop db 失败，原因: {e}")
                 raise SysException(e)
 
     def gen_count(self, coll):
         try:
             count = coll.find().count()
         except Exception as e:
+            self.logger.warning(f'gen count 失败，原因是： {e}')
             raise SysException(e)
         return count
 
