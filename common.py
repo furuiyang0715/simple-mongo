@@ -1,4 +1,4 @@
-# import sys
+import sys
 import copy
 import time
 import datetime
@@ -42,8 +42,9 @@ class SyncData:
                 charset='utf8mb4',
                 db=self.mysql_DBname
             )
-        except Exception:
-            raise
+        except Exception as e:
+            logger.info(f"哎呀，创建数据库连接似乎有点问题喔~~~ {e}")
+            raise SystemError(e)
         return mysql_con
 
 
@@ -97,7 +98,7 @@ class SyncData:
     def generate_sql_table_datas_list(self, connection, table_name, name_list, pos):
         try:
             with connection.cursor() as cursor:
-                num = 10
+                num = 1000
                 start = pos
                 while True:
                     query_sql = """
@@ -184,7 +185,7 @@ class SyncData:
                 # j_list 中有重复元素 会报错： batch op errors occurred
                 # 参考： https://stackoverflow.com/questions/38361916/pymongo-insert-many-bulkwriteerror
 
-                logger.info(f'{j_list}')
+                # logger.info(f'{j_list}')
                 res = mongo_collection.insert_many(j_list)
 
         except Exception as e:
@@ -256,7 +257,66 @@ class SyncData:
         sql_table_name_list = ['risk_data', 'economic_gdp', 'futures_basic', 'comcn_embeddedvaluechange',
                                'comcn_embeddedvalue', 'comcn_embeddedvalueindex','comcn_financespecialindexic',
                                'economic_moneysupply', 'const_keywords', 'comcn_conceptlist',
-                               'const_personal', 'comcn_bankindiconst']
+                               'const_personal', 'comcn_bankindiconst',
+
+                               'comcn_financespecialindexsc',
+                               'hkland_historycashflow',
+                               'const_industry',
+                               'derived_institution_summary',
+                               'stk_specialtrade',
+                               'hkland_historytradestat',
+                               'index_indexprepcomponent',
+                               'stk_codechangeserial',
+
+                               'const_secumain',
+                               'const_areacode',
+                               'const_newsconst',
+                               'stk_liststatus',
+                               'comcn_controllingshareholders',
+                               'comcn_actualcontroller',
+                               'comcn_violationhalding',
+                               'const_product',
+
+                               'comcn_financespecialindex',
+                               'index_basicinfo',
+                               'comcn_msecufinance',
+                               'comcn_issuanceexamination',
+                               'stk_abbrchangeserial',
+                               'stk_secuchange',
+
+                               'const_industrytype',
+                               'const_ussecumain',
+                               'comcn_performanceletters',
+                               'comcn_bankassetsliability',
+                               'comcn_sharesfloatingschedule',
+                               'comcn_mainquarterdata',
+                               'stk_business',
+                               'comcn_bankloan',
+                               'comcn_bankincomeexpense',
+
+                               'const_systemconst',
+                               'comcn_rewardstat',
+                               'derived_institution_detail',
+
+                               'comcn_coconcept',
+                               'news_secu',
+                               'comcn_bankregulator',
+
+                               'comcn_relatedsh',
+                               'comcn_exgindustry',
+                               'comcn_sharefpsta',
+                               'comcn_sharefp',
+                               'comcn_dividend',
+
+                               'comcn_managersstockalteration',
+                               'comcn_financialreportauditingopinion',
+                               'comcn_performanceforecast',
+
+                               'comcn_sharestru',
+                               'comcn_dividendprogress',
+                               'comcn_stockholdingst',
+
+                               ]
 
         cur_pos = self.generate_sql_table_length(conn, sql_table_name_list)
 
