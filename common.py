@@ -43,7 +43,7 @@ class SyncData:
                 db=self.mysql_DBname
             )
         except Exception as e:
-            logger.info(f"哎呀，创建数据库连接似乎有点问题喔~~~ {e}")
+            logger.warning(f"哎呀，创建数据库连接似乎有点问题喔~~~ {e}")
             raise SystemError(e)
         return mysql_con
 
@@ -89,8 +89,9 @@ class SyncData:
                         raise
 
                     _res_dict.update({table_name: table_length})
-        except Exception:
-            raise
+        except Exception as e:
+            logger.warning(f"查询 mysql 中当前每一张 table 的长度失败了， 具体的原因是 {e}")
+            raise SystemError(e)
         finally:
             connection.commit()
         return _res_dict
@@ -98,7 +99,8 @@ class SyncData:
     def generate_sql_table_datas_list(self, connection, table_name, name_list, pos):
         try:
             with connection.cursor() as cursor:
-                num = 1000
+                # num 的值在同步的时候可以设置较大 且不打印数据 在增量更新阶段 可以设置小一点 且在日志中打印插入的 items
+                num = 2000
                 start = pos
                 while True:
                     query_sql = """
@@ -189,7 +191,7 @@ class SyncData:
                 res = mongo_collection.insert_many(j_list)
 
         except Exception as e:
-            logger.info(f"批量插入失败， 失败的原因是 {e}")
+            logger.warning(f"批量插入失败， 失败的原因是 {e}")
             raise
 
         logger.info("插入数据成功 ！, {}".format(res))
@@ -215,11 +217,11 @@ class SyncData:
         for table_name in table_name_list:
 
             if (cur_pos.get(table_name) == last_pos.get(table_name)) and (last_pos.get(table_name) != -1):
-                logger.info("{} 当前数据库无更新".format(table_name))
+                logger.info("  {}   当前数据库无更新".format(table_name))
                 continue
 
             elif cur_pos.get(table_name) < last_pos.get(table_name):
-                logger.info("{} 当前数据库可能存在删除操作".format(table_name))
+                logger.info("  {}   当前数据库可能存在删除操作".format(table_name))
                 logger.info(f"{table_name} 数据库上次的 pos 为 {last_pos.get(table_name)} 当前的 pos 为 {cur_pos.get(table_name)}")
 
                 try:
@@ -229,12 +231,12 @@ class SyncData:
                     last_pos[table_name] = -1
                     cur_pos[table_name] = -1
                 except Exception as e:
-                    logger.info(f"drop 掉 table 时出现了异常: {e}")
+                    logger.warning(f"drop 掉 table {table_name} 时出现了异常: {e}")
                     raise SystemError(e)
                 continue
 
             else:
-                logger.info(f"{table_name} 表开始插入更新数据")
+                logger.info(f"   {table_name}     表开始插入更新数据")
                 pos = last_pos.get(table_name)
                 if (not pos) or (pos == -1):
                     pos = 0
@@ -316,21 +318,53 @@ class SyncData:
                                'comcn_dividendprogress',
                                'comcn_stockholdingst',
 
+                               'comcn_reservereportdate',
+                               'comcn_guaranteedetail',
+                               'stk_codechange',
+
+                               'const_tradingday',
+                               'const_hksecumain',
+                               'const_secumainall',
+
+                               'comcn_leaderposition',
+                               'stk_7percentchange',
+                               'stk_specialnotice',
+
+                               'comcn_qcashflowstatement',
+                               'comcn_qincomestatement',
+                               'comcn_qfinancialindex',
+                               'const_jydbdeleterec',
+
+                               'comcn_fsderiveddata',
+                               'comcn_fspecialindicators',
+                               'comcn_maindatanew',
+                               'comcn_cashflowstatementall_jy',
+
+                               'comcn_cashflowstatement',
+                               'comcn_balancesheetall_jy',
+                               'comcn_balancesheet',
+                               'comcn_incomestatement',
+                               'comcn_incomestatementall_jy',
+                               'comcn_nonrecurringevent',
+                               'comcn_executivesholdings',
+                               'comcn_mainoperincome',
+                               'hkland_shares',
+
                                ]
 
         cur_pos = self.generate_sql_table_length(conn, sql_table_name_list)
 
-        logger.info(f"当前的 pos 信息是：{cur_pos} ")  # no ObjectId 从 mysql 中查询出的
+        logger.info(f"当前 pos 信息：{cur_pos} ")  # no ObjectId 从 mysql 中查询出的
 
         last_pos1 = self.mongo.get_log_pos()
-        logger.info(f"从mongodb数据库中查询出的上一次的记录是： {last_pos1}")
+        logger.info(f"utils 中查询记录： {last_pos1}")
 
         last_pos = copy.copy(last_pos1)
 
         if last_pos:
             last_pos.pop("_id")
         last_pos = self.mongo.calibration_last_location(last_pos, sql_table_name_list)
-        logger.info(f"自查当前的mongodb数据库，校正后的上一次的 pos 信息是：{last_pos}")  # have no ObjectId
+        logger.info(f"自查mongodb数据库，校正后 pos 信息：{last_pos}")  # have no ObjectId
 
         # ignore_re = last_pos - cur_pos 忽略上次做了同步 但不在本次同步范围内的
         reserved_pos = [{key: last_pos.get(key, 0)} for key in cur_pos.keys()]
@@ -338,11 +372,11 @@ class SyncData:
         last_pos = dict()
         for _dict in reserved_pos:
             last_pos.update(_dict)
-        logger.info(f"忽略未在本次同步的数据后，上一次的 pos 信息是：{last_pos}")  # have no ObjectId
+        logger.info(f"忽略未在本次同步的 table 后 pos 信息：{last_pos}")  # have no ObjectId
 
         flag = (-1 in list(last_pos.values()) or -1 in list(cur_pos.values()))  # 说明有数据库被 drop 掉...
         while last_pos != cur_pos or flag:
-            logger.info("当前数据尚未一致， 进入处理流程...... ......")
+            logger.info("...... ...... 当前数据尚未一致， 进入处理流程...... ......")
             self.do_process(last_pos, cur_pos, sql_table_name_list)
 
         self.mongo.write_log_pos(last_pos1, last_pos)
@@ -362,7 +396,7 @@ if __name__ == '__main__':
     try:
         rundemo.sync_data()
     except Exception as e:
-        logger.debug(f"同步失败， 失败的原因是：{e} ")
+        logger.warning(f"同步失败， 失败的原因是：{e} ")
 
     end_ = time.time()
     logger.info(f'同步数据结束, 本次同步所用时间 {round((end_ - start_) / 60, 2)} min')
