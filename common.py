@@ -1,5 +1,4 @@
-# 通用 - 原始表同步程序
-
+# import sys
 import copy
 import time
 import datetime
@@ -98,7 +97,7 @@ class SyncData:
     def generate_sql_table_datas_list(self, connection, table_name, name_list, pos):
         try:
             with connection.cursor() as cursor:
-                num = 1000
+                num = 10
                 start = pos
                 while True:
                     query_sql = """
@@ -130,13 +129,44 @@ class SyncData:
         column_dict = dict(zip(name_tuple, column_tuple))
         return column_dict
 
+    def td_format(self, td_object):
+        seconds = int(td_object.total_seconds())
+        # 只保留一个秒数的字符串
+        return seconds
+        # periods = [
+        #     ('year', 60 * 60 * 24 * 365),
+        #     ('month', 60 * 60 * 24 * 30),
+        #     ('day', 60 * 60 * 24),
+        #     ('hour', 60 * 60),
+        #     ('minute', 60),
+        #     ('second', 1)
+        # ]
+        #
+        # strings = []
+        # for period_name, period_seconds in periods:
+        #     if seconds > period_seconds:
+        #         period_value, seconds = divmod(seconds, period_seconds)
+        #         has_s = 's' if period_value > 1 else ''
+        #         strings.append("%s %s%s" % (period_value, period_name, has_s))
+        #
+        # return ", ".join(strings)
+
     def check_each_sql_table_data(self, dict_data):
+        # （TODO） mongodb是无法对一个对象进行编码存储的，所以这里需要对读取到的结果进行强制类型转换
+        #  在测试的过程中发现需要转换的类型有：
+        #  (1) decimal.Decimal
+        # （2) datetime.timedelta(seconds=75600)
+
         for key, value in dict_data.items():
-            if type(value) == decimal.Decimal:
+            if isinstance(value, decimal.Decimal):
                 if value.as_tuple().exponent == 0:
                     dict_data[key] = int(value)
                 else:
                     dict_data[key] = float(value)
+
+            elif isinstance(value, datetime.timedelta):
+                dict_data[key] = self.td_format(value)
+
         return dict_data
 
     def write_datas2mongo(self, mongo_collection, sql_table_datas_list):
@@ -153,6 +183,8 @@ class SyncData:
                 #     raise SystemError("批量数据中存在至少两个相同的数目，请进行检查 ...")
                 # j_list 中有重复元素 会报错： batch op errors occurred
                 # 参考： https://stackoverflow.com/questions/38361916/pymongo-insert-many-bulkwriteerror
+
+                logger.info(f'{j_list}')
                 res = mongo_collection.insert_many(j_list)
 
         except Exception as e:
@@ -220,9 +252,14 @@ class SyncData:
         conn = self.generate_mysqlconnection()
 
         # sql_table_name_list = self.gen_sql_table_name_list(conn)
-        sql_table_name_list = tables
+        # sql_table_name_list = tables
+        sql_table_name_list = ['risk_data', 'economic_gdp', 'futures_basic', 'comcn_embeddedvaluechange',
+                               'comcn_embeddedvalue', 'comcn_embeddedvalueindex','comcn_financespecialindexic',
+                               'economic_moneysupply', 'const_keywords', 'comcn_conceptlist',
+                               'const_personal', 'comcn_bankindiconst']
 
         cur_pos = self.generate_sql_table_length(conn, sql_table_name_list)
+
         logger.info(f"当前的 pos 信息是：{cur_pos} ")  # no ObjectId 从 mysql 中查询出的
 
         last_pos1 = self.mongo.get_log_pos()
@@ -249,12 +286,6 @@ class SyncData:
             self.do_process(last_pos, cur_pos, sql_table_name_list)
 
         self.mongo.write_log_pos(last_pos1, last_pos)
-
-# if __name__ == "__main__":
-#     mongo = MyMongoDB(config['mongodb'])
-#     rundemo = SyncData(mongo)
-#     con = rundemo.generate_mysqlconnection()
-#     print(rundemo.generate_sql_table_length(con, tables))
 
 
 if __name__ == '__main__':

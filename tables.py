@@ -4,6 +4,7 @@ tables = [
     'futures_basic',
     'comcn_embeddedvaluechange',
     'comcn_embeddedvalue',
+
     'comcn_embeddedvalueindex',
     'comcn_financespecialindexic',
     'economic_moneysupply',
@@ -11,6 +12,7 @@ tables = [
     'comcn_conceptlist',
     'const_personal',
     'comcn_bankindiconst',
+
     'comcn_financespecialindexsc',
     'hkland_historycashflow',
     'const_industry',
@@ -210,4 +212,33 @@ o_tables = ['comcn_actualcontroller',
 #
 # res = [d[0] for d in dd]
 #
+# print(res)
+
+
+def td_format(td_object):
+    seconds = int(td_object.total_seconds())
+    # print(seconds)
+    return seconds
+    # periods = [
+    #     ('year',        60*60*24*365),
+    #     ('month',       60*60*24*30),
+    #     ('day',         60*60*24),
+    #     ('hour',        60*60),
+    #     ('minute',      60),
+    #     ('second',      1)
+    # ]
+    #
+    # strings = []
+    # for period_name, period_seconds in periods:
+    #     if seconds > period_seconds:
+    #         period_value , seconds = divmod(seconds, period_seconds)
+    #         has_s = 's' if period_value > 1 else ''
+    #         strings.append("%s %s%s" % (period_value, period_name, has_s))
+    #
+    # return ", ".join(strings)
+
+
+# import datetime
+# demo_dt = datetime.timedelta(seconds=76500)
+# res = td_format(demo_dt)
 # print(res)
