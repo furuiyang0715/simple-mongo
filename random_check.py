@@ -1,3 +1,4 @@
+# 抽样 检查中间额随机量 以及头尾的doc是否一致
 import configparser
 import logging
 import random
@@ -43,7 +44,7 @@ def each_check(table):
         except Exception as e:
             print(e)
         if not flag:
-            print(f"未查找到当前的数据： {final_data}")
+            print(f"未查找到当前的数据： {pos} ---> {final_data}")
             # logger.warning(f"未查找到当前的数据： {final_data}")
             return False
     return True
@@ -69,7 +70,7 @@ def SystematicSampling(table, group):
     elif total < 1000:
         group = 10
     elif group < 10000:
-        group = 50
+        group = 10
     elif group < 1000000:
         group = 500
     else:
@@ -80,6 +81,11 @@ def SystematicSampling(table, group):
     samples = list()
     for i in range(group):
         samples.append(RandomSampling(sub_num, i))
+
+    # TODO(furuiyang) 头尾数据校验
+    samples.insert(0, 0)
+    samples.insert(0, total-1)
+    # samples.extend([0, total-1])
     print("samples: ", samples)
     return samples
 
@@ -158,53 +164,65 @@ if __name__ == "__main__":
         # 'const_industrytype',
         # 'const_ussecumain',
 
-        'comcn_performanceletters',
-        'comcn_bankassetsliability',
-        'comcn_sharesfloatingschedule',
-        'comcn_mainquarterdata',
-        'stk_business',
-        'comcn_bankloan',
-        'comcn_bankincomeexpense',
-        'const_systemconst',
-        'comcn_rewardstat',
-        'derived_institution_detail',
-        'comcn_coconcept',
-        'news_secu',
-        'comcn_bankregulator',
-        'comcn_relatedsh',
-        'comcn_exgindustry',
-        'comcn_sharefpsta',
-        'comcn_sharefp',
-        'comcn_dividend',
-        'comcn_managersstockalteration',
-        'comcn_financialreportauditingopinion',
-        'comcn_performanceforecast',
-        'comcn_sharestru',
-        'comcn_dividendprogress',
-        'comcn_stockholdingst',
-        'comcn_reservereportdate',
-        'comcn_guaranteedetail',
-        'stk_codechange',
-        'const_tradingday',
-        'const_hksecumain',
-        'const_secumainall',
-        'comcn_leaderposition',
-        'stk_7percentchange',
-        'stk_specialnotice',
-        'comcn_qcashflowstatement',
-        'comcn_qincomestatement',
-        'comcn_qfinancialindex',
-        'const_jydbdeleterec',
-        'comcn_fsderiveddata',
-        'comcn_fspecialindicators',
-        'comcn_maindatanew',
-        'comcn_cashflowstatementall_jy',
-        'comcn_cashflowstatement',
-        'comcn_balancesheetall_jy',
-        'comcn_balancesheet',
-        'comcn_incomestatement',
-        'comcn_incomestatementall_jy',
-        'comcn_nonrecurringevent',
+        # 'comcn_performanceletters',
+        # 'comcn_bankassetsliability',
+        # 'comcn_sharesfloatingschedule',
+        # 'comcn_mainquarterdata',
+
+        # 'stk_business',
+        # 'comcn_bankloan',
+        # 'comcn_bankincomeexpense',
+        # 'const_systemconst',
+
+        # 'comcn_rewardstat',
+        # 'derived_institution_detail',
+        # 'comcn_coconcept',
+        # 'news_secu',
+
+        # 'comcn_bankregulator',
+        # 'comcn_relatedsh',
+        # 'comcn_exgindustry',
+        # 'comcn_sharefpsta',
+
+
+        # 'comcn_sharefp',
+        # 'comcn_dividend',
+        # 'comcn_managersstockalteration',
+        # 'comcn_financialreportauditingopinion',
+        # 'comcn_performanceforecast',  # 100646
+
+        # 'comcn_sharestru',  # 143650
+        # 'comcn_dividendprogress',
+        # 'comcn_stockholdingst',
+        # 'comcn_reservereportdate',
+        # 'comcn_guaranteedetail',  # 168727
+
+        # 'stk_codechange',  # !!!
+        # 'const_tradingday',
+        # 'const_hksecumain',
+        # 'const_secumainall',  # !!!
+
+        # 'comcn_leaderposition',  # !!!
+        # 'stk_7percentchange',  # 241289
+
+        # 'stk_specialnotice',  # ！！！
+        # 'comcn_qcashflowstatement',  # ！！！
+        # 'comcn_qincomestatement',  # 278102  # ！！！
+
+        # 'comcn_qfinancialindex',  # ！！！
+        # 'const_jydbdeleterec',
+        # 'comcn_fsderiveddata',  # --
+
+        # 'comcn_fspecialindicators',
+        # 'comcn_maindatanew',  # !!!
+        # 'comcn_cashflowstatementall_jy',
+        # 'comcn_cashflowstatement',
+
+        # 'comcn_balancesheetall_jy', # --
+        # 'comcn_balancesheet',  # --
+        # 'comcn_incomestatement',
+        # 'comcn_incomestatementall_jy',
+        # 'comcn_nonrecurringevent',
         'comcn_executivesholdings',
         'comcn_mainoperincome',
         'hkland_shares',
@@ -213,6 +231,8 @@ if __name__ == "__main__":
         'comcn_equitychangesstatement',
         'comcn_mainshlistnew',
         'trans_valuations',
+
+
 
               ]
     main_check(tables)

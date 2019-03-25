@@ -1,3 +1,4 @@
+# 可执行最简单脚本 保留
 import sys
 import copy
 import time
@@ -7,6 +8,7 @@ import pymysql
 import configparser
 import logging.config
 from mongodb import MyMongoDB
+from random_check import main_check
 from tables import tables
 
 config = configparser.ConfigParser()
@@ -62,8 +64,9 @@ class SyncData:
                 res = cursor.fetchall()
                 for i in res:
                     head_name_list.append(i[0])
-        except Exception:
-            raise
+        except Exception as e:
+            logger.warning(f"gen sql head name list {db_name}.{table_name} 失败，原因 {e}")
+            raise SystemError(e)
         finally:
             connection.commit()
         return head_name_list
@@ -85,7 +88,7 @@ class SyncData:
 
                     try:
                         table_length = res[0][0]
-                    except:
+                    except Exception:
                         raise
 
                     _res_dict.update({table_name: table_length})
@@ -100,7 +103,7 @@ class SyncData:
         try:
             with connection.cursor() as cursor:
                 # num 的值在同步的时候可以设置较大 且不打印数据 在增量更新阶段 可以设置小一点 且在日志中打印插入的 items
-                num = 2000
+                num = 1000
                 start = pos
                 while True:
                     query_sql = """
@@ -118,8 +121,9 @@ class SyncData:
                         column_dict = self.zip_doc_dict(name_list, column)
                         yield_column_list.append(column_dict)
                     yield yield_column_list
-        except Exception:
-            raise
+        except Exception as e:
+            logger.info(f'gen table data list 失败， {table_name} at position {pos}, 原因 {e}')
+            raise SystemError(e)
         finally:
             connection.commit()
 
@@ -187,12 +191,12 @@ class SyncData:
                 # j_list 中有重复元素 会报错： batch op errors occurred
                 # 参考： https://stackoverflow.com/questions/38361916/pymongo-insert-many-bulkwriteerror
 
-                # logger.info(f'{j_list}')
+                logger.info(f'{j_list}')
                 res = mongo_collection.insert_many(j_list)
 
         except Exception as e:
             logger.warning(f"批量插入失败， 失败的原因是 {e}")
-            raise
+            raise SystemError(e)
 
         logger.info("插入数据成功 ！, {}".format(res))
 
@@ -350,6 +354,21 @@ class SyncData:
                                'comcn_mainoperincome',
                                'hkland_shares',
 
+                               'index_sywgindexquote',
+                               'index_quot_day',
+                               'comcn_equitychangesstatement',
+                               'comcn_mainshlistnew',
+                               'trans_valuations',  # 2941320
+
+                               'stk_quotori_day',  # 9505973
+                               'stk_quotidxwind_day',
+                               'comcn_dindicesforvaluation',
+                               'stk_quot_day',
+                               'stk_quot_idx',
+                               'index_indexcomponentsweight',
+                               'index_weight',
+                               'index_swsindexcw'
+
                                ]
 
         cur_pos = self.generate_sql_table_length(conn, sql_table_name_list)
@@ -402,3 +421,6 @@ if __name__ == '__main__':
     logger.info(f'同步数据结束, 本次同步所用时间 {round((end_ - start_) / 60, 2)} min')
     logger.info("  " * 1000)
     logger.info("  " * 1000)
+
+    logger.info(f"开始进行抽样检查")
+    main_check(tables)
