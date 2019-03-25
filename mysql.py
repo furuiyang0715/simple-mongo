@@ -36,6 +36,20 @@ class MySql:
             raise SystemError(e)
         return mysql_con
 
+    def gen_mysql_info(self, con, table, pos):
+        query_sql = """select * from {} limit {}, 1""".format(table, pos)
+        # print(query_sql)
+        try:
+            with con.cursor() as cursor:
+                cursor.execute(query_sql)
+                res = cursor.fetchall()[0]
+        except Exception as e:
+            logger.warning(f"查询pos info失败, 原因 {e}")
+            raise SystemError(e)
+        finally:
+            con.commit()
+        return res
+
     def generate_sql_head_name_list(self, connection, db_name, table_name):
         query_sql = """
         select COLUMN_NAME, DATA_TYPE, column_comment from information_schema.COLUMNS 
@@ -84,33 +98,13 @@ class MySql:
             connection.commit()
         return _res_dict
 
-    def generate_sql_table_datas_list(self, connection, table_name, name_list, pos):
-        try:
-            with connection.cursor() as cursor:
-                # num 的值在同步的时候可以设置较大 且不打印数据 在增量更新阶段 可以设置小一点 且在日志中打印插入的 items
-                num = 1000
-                start = pos
-                while True:
-                    query_sql = """
-                    select * from {} limit {},{};""".format(table_name, start, num)
+    def zip_doc_dict(self, name_list, column_tuple):
+        if len(name_list) != len(column_tuple):
+            return None
 
-                    cursor.execute(query_sql)
-
-                    res = cursor.fetchall()
-                    if not res:
-                        break
-                    start += num
-
-                    yield_column_list = list()
-                    for column in res:
-                        column_dict = self.zip_doc_dict(name_list, column)
-                        yield_column_list.append(column_dict)
-                    yield yield_column_list
-        except Exception as e:
-            logger.info(f'gen table data list 失败， {table_name} at position {pos}, 原因 {e}')
-            raise SystemError(e)
-        finally:
-            connection.commit()
+        name_tuple = tuple(name_list)
+        column_dict = dict(zip(name_tuple, column_tuple))
+        return column_dict
 
     def td_format(self, td_object):
         seconds = int(td_object.total_seconds())
@@ -152,9 +146,9 @@ class MySql:
 
         return dict_data
 
-
     def gen_sql_table_name_list(self, connection):
-        query_sql ="""select table_name from information_schema.tables where table_schema="{}";""".format(self.mysql_DBname)
+        query_sql ="""select table_name from information_schema.tables where 
+        table_schema="{}";""".format(self.mysql_DBname)
         sql_table_name_list = list()
         try:
             with connection.cursor() as cursor:
