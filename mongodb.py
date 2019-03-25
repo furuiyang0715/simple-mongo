@@ -4,9 +4,6 @@ import logging
 
 from pymongo.errors import CollectionInvalid
 
-logging.config.fileConfig('conf/logging.conf')
-logger = logging.getLogger('mongodb')
-
 
 class SysException(Exception):
     def __init__(self, *args, **kwargs):
@@ -17,8 +14,7 @@ class MyMongoDB:
 
     mdb = None
 
-    def __init__(self, conf):
-        # self.logger = logging.getLogger(__name__)
+    def __init__(self, conf, logger):
         self.logger = logger
         try:
             password = urllib.parse.quote(conf['password'])

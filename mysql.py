@@ -4,17 +4,14 @@ import pymysql
 import logging.config
 
 
-logging.config.fileConfig('conf/logging.conf')
-logger = logging.getLogger('mysql')
-
-
 class SysException(Exception):
     def __init__(self, *args, **kwargs):
         Exception.__init__(self, *args, **kwargs)
 
 
 class MySql:
-    def __init__(self, config):
+    def __init__(self, config, logger):
+        self.logger = logger
         self.mysql_host = config['mysql']['host']
         self.mysql_port = int(config['mysql']['port'])
         self.mysql_username = config['mysql']['user']
@@ -32,25 +29,24 @@ class MySql:
                 db=self.mysql_DBname
             )
         except Exception as e:
-            logger.warning(f"创建数据库连接失败： {e}")
+            self.logger.warning(f"创建数据库连接失败： {e}")
             raise SystemError(e)
         return mysql_con
 
     def gen_mysql_info(self, con, table, pos):
         query_sql = """select * from {} limit {}, 1""".format(table, pos)
-        # print(query_sql)
         try:
             with con.cursor() as cursor:
                 cursor.execute(query_sql)
                 res = cursor.fetchall()[0]
         except Exception as e:
-            logger.warning(f"查询pos info失败, 原因 {e}")
+            self.logger.warning(f"查询pos info失败, 原因 {e}")
             raise SystemError(e)
         finally:
             con.commit()
         return res
 
-    def generate_sql_head_name_list(self, connection, db_name, table_name):
+    def gen_sql_head_name_list(self, connection, db_name, table_name):
         query_sql = """
         select COLUMN_NAME, DATA_TYPE, column_comment from information_schema.COLUMNS 
         where table_name="{}" and table_schema="{}";
@@ -64,13 +60,13 @@ class MySql:
                 for i in res:
                     head_name_list.append(i[0])
         except Exception as e:
-            logger.warning(f"gen sql head name list {db_name}.{table_name} 失败，原因 {e}")
+            self.logger.warning(f"gen sql head name list {db_name}.{table_name} 失败，原因 {e}")
             raise SystemError(e)
         finally:
             connection.commit()
         return head_name_list
 
-    def generate_sql_table_length(self, connection, table_name_list):
+    def gen_sql_table_length(self, connection, table_name_list):
         if not isinstance(table_name_list, list):
             table_name_list = [table_name_list]
 
@@ -92,7 +88,7 @@ class MySql:
 
                     _res_dict.update({table_name: table_length})
         except Exception as e:
-            logger.warning(f"查询 mysql 中当前每一张 table 的长度失败了， 具体的原因是 {e}")
+            self.logger.warning(f"查询 mysql 中当前每一张 table 的长度失败了， 具体的原因是 {e}")
             raise SystemError(e)
         finally:
             connection.commit()
@@ -108,28 +104,9 @@ class MySql:
 
     def td_format(self, td_object):
         seconds = int(td_object.total_seconds())
-        # 只保留一个秒数的字符串
         return seconds
-        # periods = [
-        #     ('year', 60 * 60 * 24 * 365),
-        #     ('month', 60 * 60 * 24 * 30),
-        #     ('day', 60 * 60 * 24),
-        #     ('hour', 60 * 60),
-        #     ('minute', 60),
-        #     ('second', 1)
-        # ]
-        #
-        # strings = []
-        # for period_name, period_seconds in periods:
-        #     if seconds > period_seconds:
-        #         period_value, seconds = divmod(seconds, period_seconds)
-        #         has_s = 's' if period_value > 1 else ''
-        #         strings.append("%s %s%s" % (period_value, period_name, has_s))
-        #
-        # return ", ".join(strings)
 
     def check_each_sql_table_data(self, dict_data):
-        # （TODO） mongodb是无法对一个对象进行编码存储的，所以这里需要对读取到的结果进行强制类型转换
         #  在测试的过程中发现需要转换的类型有：
         #  (1) decimal.Decimal
         # （2) datetime.timedelta(seconds=75600)
