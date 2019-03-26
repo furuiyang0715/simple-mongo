@@ -49,8 +49,13 @@ class RandomCheck:
 
     def SystematicSampling(self, table, group):
         try:
-            coll = self.mongo.get_coll(table, "datacenter")
-            total = self.mongo.gen_count(coll)
+            # coll = self.mongo.get_coll(table, "datacenter")
+            # total = self.mongo.gen_count(coll)
+
+            # 应该从pos_log中获取total
+            coll = self.mongo.get_coll("pos_log", "datacenter")
+            total = coll.find().next().get(table)
+
             self.logger.info(f"table: {table} , total: {total}")
         except Exception as e:
             self.logger.warning(f"系统抽样中计算总数失败， {e}")

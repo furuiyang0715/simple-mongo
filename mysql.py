@@ -139,3 +139,31 @@ class MySql:
         finally:
             connection.commit()
         return sql_table_name_list
+
+    def gen_sql_table_datas_list(self, connection, table_name, name_list, pos):
+        try:
+            with connection.cursor() as cursor:
+                # num 的值在同步的时候可以设置较大 且不打印数据 在增量更新阶段 可以设置小一点 且在日志中打印插入的 items
+                num = 1000
+                start = pos
+                while True:
+                    query_sql = """
+                    select * from {} limit {},{};""".format(table_name, start, num)
+
+                    cursor.execute(query_sql)
+
+                    res = cursor.fetchall()
+                    if not res:
+                        break
+                    start += num
+
+                    yield_column_list = list()
+                    for column in res:
+                        column_dict = self.zip_doc_dict(name_list, column)
+                        yield_column_list.append(column_dict)
+                    yield yield_column_list
+        except Exception as e:
+            self.logger.info(f'gen table data list 失败， {table_name} at position {pos}, 原因 {e}')
+            raise SystemError(e)
+        finally:
+            connection.commit()

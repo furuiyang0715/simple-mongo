@@ -80,21 +80,27 @@ class MyMongoDB:
             self.logger.warning(f'写入 log_pos 失败，失败的原因是 {e}')
             raise SysException(e)
 
-        if doc:  # write for the first time
+        # 不是第一次
+        if doc:
             try:
                 self.logger.info("开始更新日志结构： ")
+                self.logger.info(f"被跟新进入的日志结构是： {cur_pos}")
                 # coll.replace_one(last_pos, cur_pos)
                 coll.update(last_pos, cur_pos, upsert=True)
 
             except Exception as e:
                 self.logger.warning(f'更新日志结构失败，原因 {e}')
                 raise SysException(e)
+
         else:  # rewrite
             try:
                 coll.insert_one(cur_pos)
             except Exception as e:
                 self.logger.warning(f'首次写入 log_pos 失败，原因 {e}')
                 raise SysException(e)
+
+        res = coll.find().next()
+        self.logger.info(f"更新结果： {res}")
 
     def get_log_pos(self):
         coll = self.get_coll('pos_log', "datacenter")

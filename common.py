@@ -5,7 +5,9 @@ import datetime
 import decimal
 import pymysql
 import configparser
+
 import logging.config
+
 from mongodb import MyMongoDB
 from myrandom import RandomCheck
 from mysql import MySql
@@ -23,94 +25,6 @@ class SyncData:
         self.conf = config
         self.mongo = mongo
         self.mysql = mysql
-
-        self.check_date = datetime.datetime.combine(datetime.date.today(), datetime.time.min)
-
-    @staticmethod
-    def generate_sql_head_name_list(connection, db_name, table_name):
-        query_sql = """
-        select COLUMN_NAME, DATA_TYPE, column_comment from information_schema.COLUMNS 
-        where table_name="{}" and table_schema="{}";
-        """.format(table_name, db_name)
-
-        head_name_list = list()
-        try:
-            with connection.cursor() as cursor:
-                cursor.execute(query_sql)
-                res = cursor.fetchall()
-                for i in res:
-                    head_name_list.append(i[0])
-        except Exception as e:
-            logger.warning(f"gen sql head name list {db_name}.{table_name} 失败，原因 {e}")
-            raise SystemError(e)
-        finally:
-            connection.commit()
-        return head_name_list
-
-    def generate_sql_table_length(self, connection, table_name_list):
-        if not isinstance(table_name_list, list):
-            table_name_list = [table_name_list]
-
-        query_sql = """select count(*) from {};"""
-
-        _res_dict = dict()
-
-        try:
-            with connection.cursor() as cursor:
-                for table_name in table_name_list:
-                    q_sql = query_sql.format(table_name)
-                    cursor.execute(q_sql)
-                    res = cursor.fetchall()
-
-                    try:
-                        table_length = res[0][0]
-                    except Exception:
-                        raise
-
-                    _res_dict.update({table_name: table_length})
-        except Exception as e:
-            logger.warning(f"查询 mysql 中当前每一张 table 的长度失败了， 具体的原因是 {e}")
-            raise SystemError(e)
-        finally:
-            connection.commit()
-        return _res_dict
-
-    def gen_sql_table_datas_list(self, connection, table_name, name_list, pos):
-        try:
-            with connection.cursor() as cursor:
-                # num 的值在同步的时候可以设置较大 且不打印数据 在增量更新阶段 可以设置小一点 且在日志中打印插入的 items
-                num = 10000
-                start = pos
-                while True:
-                    query_sql = """
-                    select * from {} limit {},{};""".format(table_name, start, num)
-
-                    cursor.execute(query_sql)
-
-                    res = cursor.fetchall()
-                    if not res:
-                        break
-                    start += num
-
-                    yield_column_list = list()
-                    for column in res:
-                        column_dict = self.zip_doc_dict(name_list, column)
-                        yield_column_list.append(column_dict)
-                    yield yield_column_list
-        except Exception as e:
-            logger.info(f'gen table data list 失败， {table_name} at position {pos}, 原因 {e}')
-            raise SystemError(e)
-        finally:
-            connection.commit()
-
-    @staticmethod
-    def zip_doc_dict(name_list, column_tuple):
-        if len(name_list) != len(column_tuple):
-            return None
-
-        name_tuple = tuple(name_list)
-        column_dict = dict(zip(name_tuple, column_tuple))
-        return column_dict
 
     def td_format(self, td_object):
         seconds = int(td_object.total_seconds())
@@ -186,7 +100,7 @@ class SyncData:
                 if (not pos) or (pos == -1):
                     pos = 0
 
-                head_name_list = self.mysql.gen_sql_head_name_list(conn, self.mysql_DBname, table_name)
+                head_name_list = self.mysql.gen_sql_head_name_list(conn, 'datacenter', table_name)
 
                 sql_table_datas_list = self.mysql.gen_sql_table_datas_list(conn, table_name, head_name_list, pos)
 
@@ -197,34 +111,40 @@ class SyncData:
                 last_pos[table_name] = cur_pos[table_name]
 
     def sync_data(self, tables):
+        # 某个时刻 mysql 数据库中的数量信息
         con = self.mysql.gen_con()
         cur_pos = self.mysql.gen_sql_table_length(con, tables)
-        logger.info(f"当前 pos 信息：{cur_pos} ")  # no ObjectId 从 mysql 中查询出的
+        logger.info(f"当前 pos 信息：{cur_pos} ")
 
+        # log_pos 中的记录信息 用于 upsert 更新写入
         last_pos1 = self.mongo.get_log_pos()
-        logger.info(f"utils 中查询记录： {last_pos1}")
+        logger.info(f"pos_log 中查询记录： {last_pos1}")
 
         last_pos = copy.copy(last_pos1)
 
         if last_pos:
             last_pos.pop("_id")
         last_pos = self.mongo.calibration_last_location(last_pos, tables)
-        logger.info(f"自查mongodb数据库，校正后 pos 信息：{last_pos}")  # have no ObjectId
-
-        # ignore_re = last_pos - cur_pos 忽略上次做了同步 但不在本次同步范围内的
-        reserved_pos = [{key: last_pos.get(key, 0)} for key in cur_pos.keys()]
-
-        last_pos = dict()
-        for _dict in reserved_pos:
-            last_pos.update(_dict)
-        logger.info(f"忽略未在本次同步的 table 后 pos 信息：{last_pos}")  # have no ObjectId
+        logger.info(f"根据实际情况校正记录： {last_pos}")  # have no ObjectId
 
         flag = (-1 in list(last_pos.values()) or -1 in list(cur_pos.values()))
-        while last_pos != cur_pos or flag:
+
+        f1 = True
+        for table in tables:
+            if last_pos.get(table) != cur_pos.get(table):
+                f1 = False
+
+        while (not f1) or flag:
             logger.info("...... ...... 当前数据尚未一致， 进入处理流程...... ......")
+            # 目的： 根据 last_pos 和 cur_pos 处理到两者一致
             self.do_process(last_pos, cur_pos, tables)
 
-        self.mongo.write_log_pos(last_pos1, last_pos)
+        # 保持查询 mySQL 的时刻的数据一致性
+        logger.info(f"上一次的记录数据是： {last_pos1}, 本次的更入校正数据是 {cur_pos}")
+        try:
+            self.mongo.write_log_pos(last_pos1, cur_pos)
+        except Exception as e:
+            raise SystemError(e)
 
 
 if __name__ == '__main__':
