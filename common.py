@@ -1,8 +1,10 @@
 import sys
+
 import copy
 import time
 import datetime
 import decimal
+
 import pymysql
 import configparser
 
@@ -153,6 +155,24 @@ if __name__ == '__main__':
     logger.info("  "*1000)
     sync_moment = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     logger.info(f'当前时间是 {sync_moment}  开始同步数据啦')
+
+    # 发送进程开启的监控信息
+    import requests
+    import json
+
+    url = "http://172.17.0.1:6399/metrics"
+    d = {
+        "container_id": "0001",
+        "instance": "sync ins",
+        "job": "sync data from mysql to mongodb",
+        "name": "sync-01"
+    }
+    for i in range(10):
+        res = requests.post(url, data=json.dumps(d))
+        code = res.status_code
+        if code == 200:
+            break
+    logger.info(f"已向监控报告开启， 回复状态码是 {code}")
 
     mongo = MyMongoDB(config['mongodb'], logger)
     mysql = MySql(config, logger)
