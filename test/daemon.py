@@ -97,7 +97,6 @@ class Daemon(object):
         except IOError:
             pid = None
 
-        # print(pids)
         if pids:
             message = "Pidfile {} already exist. Daemon already running?\n".format(self.pidfile)
             self.logger.error(message)
@@ -106,7 +105,6 @@ class Daemon(object):
 
         # Start daemon.
         self.daemonize()
-
         self.logger.info("Demonized. Start run")
         self.run()
 
