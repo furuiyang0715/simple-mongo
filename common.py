@@ -131,6 +131,7 @@ class SyncData:
     def sync_data(self, tables):
         # 某个时刻 mysql 数据库中的数量信息
         con = self.mysql.gen_con()
+
         cur_pos = self.mysql.gen_sql_table_length(con, tables)
         self.logger.info(f"当前 pos 信息：{cur_pos} ")
 
@@ -154,9 +155,7 @@ class SyncData:
 
         while (not f1) or flag:
             self.logger.info("...... ...... 当前数据尚未一致， 进入处理流程...... ......")
-            self.logger.info(f"last_pos:{last_pos}")
-            self.logger.info(f"cur_pos:{cur_pos}")
-            # 目的： 根据 last_pos 和 cur_pos 处理到两者一致
+
             self.do_process(last_pos, cur_pos, tables)
 
             flag = (-1 in list(last_pos.values()) or -1 in list(cur_pos.values()))
@@ -165,12 +164,9 @@ class SyncData:
                 if last_pos.get(table) != cur_pos.get(table):
                     f1 = False
 
-        # 保持查询 mySQL 的时刻的数据一致性
         self.logger.info(f"上一次的记录数据是： {last_pos1}, 本次的更入校正数据是 {cur_pos}")
-        try:
-            self.mongo.write_log_pos(last_pos1, cur_pos)
-        except Exception as e:
-            raise SystemError(e)
+
+        self.mongo.write_log_pos(last_pos1, cur_pos)
 
 
 class MyMongoDaemon(Daemon):
@@ -191,51 +187,44 @@ class MyMongoDaemon(Daemon):
 
         self.scheduler()
 
-        # while True:
-        #     # fork 出的守护进程（主进程） 持续运行
-        #     self.logger.info('During...')   # 每分钟打印一个 During
-        #     time.sleep(60)
-
     def scheduler(self):
-        # self.write_pid(str(os.getpid()))
-        # if self.setproctitle:
-        #     import setproctitle
-        #     setproctitle.setproctitle('mymongo_scheduler')
         sched = BlockingScheduler()
         try:
             sched.add_job(self.dummy_sched, 'interval', minutes=20)
-            # sched.add_job(self.dummy_sched, 'interval', hours=24)
             sched.start()
         except Exception as e:
             self.logger.error('Cannot start scheduler. Error: ' + str(e))
+            sys.exit(1)
+
+    def poke_one(self):
+        """开始工作前戳一次"""
+        import requests
+        import json
+
+        url = "http://172.17.0.1:9999/metrics"
+        d = {
+            "container_id": "0002",
+            "instance": "sync_exporter",
+            "job": "sync_exporter",
+            "name": "sync_exporter"
+        }
+
+        code = None
+        for i in range(10):
+            try:
+                res = requests.post(url, data=json.dumps(d), timeout=0.5)
+                code = res.status_code
+            except Exception:
+                break
+            if code == 200:
+                break
+        self.logger.info(f"poking once, code = {code}")
 
     def dummy_sched(self):
-        self.logger.info("  " * 1000)
-        self.logger.info("  " * 1000)
         sync_moment = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        self.logger.info(f'当前时间是 {sync_moment}  开始同步数据啦')
+        self.logger.info(f'当前时间是 {sync_moment}  开始同步数据.')
 
-        """发送进程开启的监控信息"""
-        # import requests
-        # import json
-        #
-        # url = "http://172.17.0.1:6399/metrics"
-        # d = {
-        #     "container_id": "0001",
-        #     "instance": "sync ins",
-        #     "job": "sync data from mysql to mongodb",
-        #     "name": "sync-01"
-        # }
-        # for i in range(10):
-        #     res = requests.post(url, data=json.dumps(d))
-        #     code = res.status_code
-        #     if code == 200:
-        #         break
-        # self.logger.info(f"已向监控报告开启， 回复状态码是 {code}")
-
-        # 再读取一次 config
-        # config = configparser.ConfigParser()
-        # config.read('conf/config.ini')
+        # self.poke_one()
 
         mongo = MyMongoDB(config['mongodb'], self.logger)
         mysql = MySql(config, self.logger)
@@ -247,17 +236,20 @@ class MyMongoDaemon(Daemon):
             rundemo.sync_data(tables)
         except Exception as e:
             self.logger.warning(f"同步失败， 失败的原因是：{e} ")
+            sys.exit(1)
 
         end_ = time.time()
         self.logger.info(f'同步数据结束, 本次同步所用时间 {round((end_ - start_) / 60, 2)} min')
-        self.logger.info("  " * 1000)
-        self.logger.info("  " * 1000)
 
-        self.logger.info(f"开始进行抽样检查")
+        self.logger.info(f"开始进行抽样检查.")
         t1 = time.time()
 
-        myrandom = RandomCheck(10, mongo, config, self.logger)
-        fail_tables = myrandom.check(tables)
+        try:
+            myrandom = RandomCheck(10, mongo, config, self.logger)
+            fail_tables = myrandom.check(tables)
+        except Exception as e:
+            self.logger.warning(f'抽样失败，失败的原因是 {e}')
+            sys.exit(1)
 
         t2 = time.time()
         self.logger.info(f'抽样失败列表: {fail_tables} 耗时 {round((t2 - t1) / 60, 2)} min')
@@ -271,14 +263,19 @@ class MyMongoDaemon(Daemon):
                     self.logger.info(f"数据库 {table} 被drop掉啦")
                 except Exception as e:
                     self.logger.warning(f"drop 掉 table {table} 时出现了异常: {e}")
-                    raise SystemError(e)
+                    sys.exit(1)
+            try:
+                rundemo.sync_data(fail_tables)
+                # 再次进行抽样
+                fail_tables = myrandom.check(fail_tables)
+            except Exception as e:
+                self.logger.warning(f'重建抽样失败，原因是 {e}')
+                sys.exit(1)
 
-            rundemo.sync_data(fail_tables)
-            # 再次进行抽样
-            fail_tables = myrandom.check(fail_tables)
             self.logger.info(f"重建后抽样结果： {fail_tables}")
+
         t4 = time.time()
-        self.logger.info(f"重建耗时： {round((t4 - t3) / 60, 2)} min")
+        self.logger.info(f"重建成功， 总耗时： {round((t4 - t3) / 60, 2)} min")
 
         self.logger.info("over")
 
@@ -287,6 +284,7 @@ class MyMongoDaemon(Daemon):
 
 
 class MonitorDaemon(Daemon):
+
     def run(self):
         sys.stderr = self.log_err
 
@@ -299,20 +297,42 @@ class MonitorDaemon(Daemon):
             self.setproctitle = False
 
         self.logger.info("Monitoring on.")
-
-        self.oversee()
-
-    def oversee(self):
-        flag = True
-        while flag:
+        while True:
             try:
                 self.poke()
-                self.logger.info("上报成功.")
-                # 20 分钟上报一次
-                # time.sleep(20*60)
-                # time.sleep(2)
             except Exception as e:
-                self.logger.info(f"上报回复异常. 原因： {e}")
+                logging.warning(f"上报异常 {e}")
+
+            try:
+                self.oversee()
+            except Exception as e:
+                self.logger.warning(f"出现异常 {e}，停止上报")
+                sys.exit(1)
+
+    def oversee(self):
+        checked_pid_file = config['log']['pidfile']
+        try:
+            with open(checked_pid_file) as f:
+                pids = f.readlines()
+        except IOError:
+            message = "There is not PID file. Daemon is not running\n"
+            # sys.stderr.write(message)
+            # sys.exit(1)
+            self.logger.warning(f"{message}")
+            raise
+        for pid in pids:
+            # sys.stdout.write(f'{pids}')
+            self.logger.info(f"文件中读取到的 pids 是： {pid}")
+            try:
+                procfile = open("/proc/{}/status".format(pid), 'r')
+                procfile.close()
+                message = "There is a process with the PID {}\n".format(pid)
+                # sys.stdout.write(message)
+                self.logger.info(f"{message}, 正常运行.")
+            except IOError:
+                message = "There is not a process with the PID {}\n".format(self.pidfile)
+                # sys.stdout.write(message)
+                raise SystemError(message)
 
     def poke(self):
         """戳一下"""
@@ -353,12 +373,13 @@ def monitor_start():
     logging.config.fileConfig('conf/monitorlog.conf')
     logger = logging.getLogger('monitor')
 
-    log_err = LoggerWriter(logger, logging.ERROR)
     pid_file = config['monitor']['pidfile']
+    log_err = LoggerWriter(logger, logging.ERROR)
     monitor = MonitorDaemon(pidfile=pid_file, log_err=log_err)
     monitor.start()
 
 
 if __name__ == '__main__':
-    # sync_start()
-    monitor_start()
+    sync_start()
+    # time.sleep(100)
+    # monitor_start()
