@@ -286,21 +286,79 @@ class MyMongoDaemon(Daemon):
         open(self.pidfile, 'a+').write("{}\n".format(pid))
 
 
+class MonitorDaemon(Daemon):
+    def run(self):
+        sys.stderr = self.log_err
+
+        try:
+            util.find_spec('setproctitle')
+            self.setproctitle = True
+            import setproctitle
+            setproctitle.setproctitle('mymonitor')
+        except ImportError:
+            self.setproctitle = False
+
+        self.logger.info("Monitoring on.")
+
+        self.oversee()
+
+    def oversee(self):
+        flag = True
+        while flag:
+            try:
+                self.poke()
+                self.logger.info("上报成功.")
+                # 20 分钟上报一次
+                # time.sleep(20*60)
+                # time.sleep(2)
+            except Exception as e:
+                self.logger.info(f"上报回复异常. 原因： {e}")
+
+    def poke(self):
+        """戳一下"""
+        import requests
+        import json
+
+        url = "http://172.17.0.1:9999/metrics"
+        d = {
+            "container_id": "0001",
+            "instance": "sync_daemon",
+            "job": "sync_daemon",
+            "name": "sync_daemon"
+        }
+
+        try:
+            res = requests.post(url, data=json.dumps(d), timeout=0.5)
+        except requests.exceptions.ConnectTimeout:
+            raise SystemError("连接超时")
+        except Exception:
+            raise
+        if res.status_code != 200:
+            raise SystemError(f"状态码异常 {res.status_code}")
+
+
 def sync_start():
-    # config = configparser.ConfigParser()
-    # config.read('conf/config.ini')
 
     logging.config.fileConfig('conf/logging.conf')
     logger = logging.getLogger('common')
 
     pid_file = config['log']['pidfile']
-    # print(pid_file)
     log_err = LoggerWriter(logger, logging.ERROR)
-    # print(log_err)
 
-    dd = MyMongoDaemon(pidfile=pid_file, log_err=log_err)
-    dd.start()
+    worker = MyMongoDaemon(pidfile=pid_file, log_err=log_err)
+    worker.start()
+
+
+def monitor_start():
+    logging.config.fileConfig('conf/monitorlog.conf')
+    logger = logging.getLogger('monitor')
+
+    log_err = LoggerWriter(logger, logging.ERROR)
+    pid_file = config['monitor']['pidfile']
+    monitor = MonitorDaemon(pidfile=pid_file, log_err=log_err)
+    monitor.start()
 
 
 if __name__ == '__main__':
-    sync_start()
+    # sync_start()
+    monitor_start()
