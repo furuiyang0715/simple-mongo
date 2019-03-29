@@ -86,6 +86,8 @@ def RandomSampling(sub_num, i):
     start = i * sub_num   # 0, 1, 2, 3, 4    # 0, 20, 40, 60, 80
     end = (i+1) * sub_num - 1                # 20, 40, 60, 80, 100
     # 0-19 20-39 40-59 60-79 80-99
+    # 这样写 start 有可能大于 end 所以要做一个校正
+    start, end = (start, end) if start < end else (end, start)
     try:
         sample = myrandom.randint(start, end)
         return sample
@@ -105,9 +107,7 @@ def main_check(tables):
             else:
                 fail_tables.append(table)
     except Exception as e:
-        # logger.warning(f'some thing have been wrong during the check: {e}')
         print(f'some thing have been wrong during the check: {e}')
-    # logger.info(f"The ret of check is success: {suc_tables}, fail: {fail_tables}")
     print(f"The ret of check is success: {suc_tables}, fail: {fail_tables}")
     return fail_tables
 
