@@ -1,0 +1,15 @@
+30-07-2019 10:07:10 root:ERROR:Exception occurred
+Traceback (most recent call last):
+  File "testlog003.py", line 7, in <module>
+    c = a / b
+ZeroDivisionError: division by zero
+30-07-2019 10:07:10 root:ERROR:Exception occurred
+Traceback (most recent call last):
+  File "testlog003.py", line 7, in <module>
+    c = a / b
+ZeroDivisionError: division by zero
+30-07-2019 10:07:10 root:DEBUG:Exception occurred
+Traceback (most recent call last):
+  File "testlog003.py", line 7, in <module>
+    c = a / b
+ZeroDivisionError: division by zero
