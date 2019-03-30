@@ -75,7 +75,10 @@ class Daemon(object):
 
         # Write pidfile.
         pid = str(os.getpid())
+        # self.logger.info(f"-----------------> {pid}")
+        self.logger.info(self.pidfile)
         open(self.pidfile, 'w+').write("{}\n".format(pid))
+        # self.logger.info(f"-----------------> {pid}")
 
         # Register a function to clean up.
         atexit.register(self.delpid)

@@ -4,7 +4,7 @@ from mysql import MySql
 
 class RandomCheck:
     def __init__(self, group, mongo, config, logger):
-        self.group = group
+        self.group = int(group)
         self.logger = logger
         self.mongo = mongo
         self.config = config
@@ -20,6 +20,7 @@ class RandomCheck:
                     fail_tables.append(table)
         except Exception as e:
             self.logger.warning(f'some thing have been wrong during the check: {e}')
+            raise
         self.logger.info(f"The ret of check is success: {suc_tables}, fail: {fail_tables}")
         return fail_tables
 
@@ -60,8 +61,9 @@ class RandomCheck:
         except Exception as e:
             self.logger.warning(f"系统抽样中计算总数失败， {e}")
             raise SystemError(e)
-
-        sub_num = int(total / group)  # 向下取整 防止 index out of range
+        # self.logger.info(f'{total}, {type(total)}')
+        # self.logger.info(f'{group}, {type(group)}')
+        sub_num = int(total/group)  # 向下取整 防止 index out of range
         samples = list()
         for i in range(group):
             samples.append(self.RandomSampling(sub_num, i))
@@ -76,6 +78,7 @@ class RandomCheck:
     def RandomSampling(self, sub_num, i):
         start = i * sub_num
         end = (i + 1) * sub_num - 1
+        start, end = (start, end) if start <= end else (end, start)
         try:
             sample = random.randint(start, end)
             return sample

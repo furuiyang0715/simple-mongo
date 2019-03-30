@@ -5,6 +5,8 @@ import datetime
 import decimal
 import pymysql
 import configparser
+import requests
+import json
 
 import os
 from multiprocessing import Process
@@ -52,7 +54,6 @@ class SyncData:
         #  在测试的过程中发现需要转换的类型有：
         #  (1) decimal.Decimal
         # （2) datetime.timedelta(seconds=75600)
-
         for key, value in dict_data.items():
             if isinstance(value, decimal.Decimal):
                 if value.as_tuple().exponent == 0:
@@ -73,14 +74,6 @@ class SyncData:
                     j = self.check_each_sql_table_data(j)
                     j_list.append(j)
 
-                # Error: unhashable type: 'dict'
-                # j_set = set(j_list)
-                # if len(j_set) != len(j_list):
-                #     raise SystemError("批量数据中存在至少两个相同的数目，请进行检查 ...")
-                # j_list 中有重复元素 会报错： batch op errors occurred
-                # 参考： https://stackoverflow.com/questions/38361916/pymongo-insert-many-bulkwriteerror
-
-                # logger.info(f'{j_list}')
                 res = mongo_collection.insert_many(j_list)
 
         except Exception as e:
@@ -173,6 +166,7 @@ class MyMongoDaemon(Daemon):
     def run(self):
         sys.stderr = self.log_err
 
+        # 为当前进程命名
         try:
             util.find_spec('setproctitle')
             self.setproctitle = True
@@ -182,7 +176,7 @@ class MyMongoDaemon(Daemon):
             self.setproctitle = False
 
         self.logger.info("Running")
-
+        # 定时任务首次不会开启，所以定时之前先启动一次
         self.dummy_sched()
 
         self.scheduler()
@@ -193,15 +187,12 @@ class MyMongoDaemon(Daemon):
             sched.add_job(self.dummy_sched, 'interval', minutes=20)
             sched.start()
         except Exception as e:
-            self.logger.error('Cannot start scheduler. Error: ' + str(e))
+            self.logger.error(f'Cannot start scheduler. Error: {e}')
             sys.exit(1)
 
     def poke_one(self):
         """开始工作前戳一次"""
-        import requests
-        import json
-
-        url = "http://172.17.0.1:9999/metrics"
+        url = config['poke']['url']
         d = {
             "container_id": "0002",
             "instance": "sync_exporter",
@@ -213,7 +204,7 @@ class MyMongoDaemon(Daemon):
         for i in range(10):
             try:
                 res = requests.post(url, data=json.dumps(d), timeout=0.5)
-                code = res.status_code
+                code = res.status_code if res else None
             except Exception:
                 break
             if code == 200:
@@ -224,7 +215,7 @@ class MyMongoDaemon(Daemon):
         sync_moment = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         self.logger.info(f'当前时间是 {sync_moment}  开始同步数据.')
 
-        # self.poke_one()
+        self.poke_one()
 
         mongo = MyMongoDB(config['mongodb'], self.logger)
         mysql = MySql(config, self.logger)
@@ -235,7 +226,7 @@ class MyMongoDaemon(Daemon):
         try:
             rundemo.sync_data(tables)
         except Exception as e:
-            self.logger.warning(f"同步失败， 失败的原因是：{e} ")
+            self.logger.warning(f"同步失败， 失败的原因是：{e} ", exc_info=True)
             sys.exit(1)
 
         end_ = time.time()
@@ -245,10 +236,12 @@ class MyMongoDaemon(Daemon):
         t1 = time.time()
 
         try:
-            myrandom = RandomCheck(10, mongo, config, self.logger)
+            check_num = config['check']['num']
+            myrandom = RandomCheck(check_num, mongo, config, self.logger)
             fail_tables = myrandom.check(tables)
         except Exception as e:
-            self.logger.warning(f'抽样失败，失败的原因是 {e}')
+            self.logger.warning(f'抽样失败，失败的原因是 {e}', exc_info=True)
+            # 退出逻辑同上
             sys.exit(1)
 
         t2 = time.time()
@@ -262,14 +255,14 @@ class MyMongoDaemon(Daemon):
                     mongo.get_coll(table, "datacenter").drop()
                     self.logger.info(f"数据库 {table} 被drop掉啦")
                 except Exception as e:
-                    self.logger.warning(f"drop 掉 table {table} 时出现了异常: {e}")
+                    self.logger.warning(f"drop 掉 table {table} 时出现了异常: {e}", exc_info=True)
                     sys.exit(1)
             try:
                 rundemo.sync_data(fail_tables)
                 # 再次进行抽样
                 fail_tables = myrandom.check(fail_tables)
             except Exception as e:
-                self.logger.warning(f'重建抽样失败，原因是 {e}')
+                self.logger.warning(f'重建抽样失败，原因是 {e}', exc_info=True)
                 sys.exit(1)
 
             self.logger.info(f"重建后抽样结果： {fail_tables}")
@@ -277,7 +270,7 @@ class MyMongoDaemon(Daemon):
         t4 = time.time()
         self.logger.info(f"重建成功， 总耗时： {round((t4 - t3) / 60, 2)} min")
 
-        self.logger.info("over")
+        self.logger.info("- - - over - - - ")
 
     def write_pid(self, pid):
         open(self.pidfile, 'a+').write("{}\n".format(pid))
@@ -307,7 +300,7 @@ class MonitorDaemon(Daemon):
                 self.oversee()
             except Exception as e:
                 self.logger.warning(f"出现异常 {e}，停止上报")
-                sys.exit(1)
+                # sys.exit(1)
 
     def oversee(self):
         checked_pid_file = config['log']['pidfile']
@@ -336,8 +329,6 @@ class MonitorDaemon(Daemon):
 
     def poke(self):
         """戳一下"""
-        import requests
-        import json
 
         url = "http://172.17.0.1:9999/metrics"
         d = {
@@ -357,29 +348,28 @@ class MonitorDaemon(Daemon):
             raise SystemError(f"状态码异常 {res.status_code}")
 
 
-def sync_start():
-
+if __name__ == "__main__":
     logging.config.fileConfig('conf/logging.conf')
-    logger = logging.getLogger('common')
+    sync_logger = logging.getLogger('root')
 
     pid_file = config['log']['pidfile']
-    log_err = LoggerWriter(logger, logging.ERROR)
+    log_err = LoggerWriter(sync_logger, logging.ERROR)
 
     worker = MyMongoDaemon(pidfile=pid_file, log_err=log_err)
-    worker.start()
 
-
-def monitor_start():
-    logging.config.fileConfig('conf/monitorlog.conf')
-    logger = logging.getLogger('monitor')
-
-    pid_file = config['monitor']['pidfile']
-    log_err = LoggerWriter(logger, logging.ERROR)
-    monitor = MonitorDaemon(pidfile=pid_file, log_err=log_err)
-    monitor.start()
-
-
-if __name__ == '__main__':
-    sync_start()
-    # time.sleep(100)
-    # monitor_start()
+    if len(sys.argv) >= 2:
+        if 'start' == sys.argv[1]:
+            worker.start()
+        elif 'stop' == sys.argv[1]:
+            worker.stop()
+        elif 'restart' == sys.argv[1]:
+            worker.restart()
+        elif 'status' == sys.argv[1]:
+            worker.status()
+        else:
+            sys.stderr.write("Unknown command\n")
+            sys.exit(2)
+        sys.exit(0)
+    else:
+        sys.stderr.write("usage: %s start|stop|restart\n" % sys.argv[0])
+        sys.exit(2)
