@@ -44,6 +44,7 @@ class MonitorDaemon(Daemon):
         while True:
             try:
                 self.poke()
+                time.sleep(20)
             except Exception as e:
                 logging.warning(f"上报异常 {e}")
 
@@ -66,6 +67,7 @@ class MonitorDaemon(Daemon):
             raise
         for pid in pids:
             # sys.stdout.write(f'{pids}')
+            pid = pid.strip()
             self.logger.info(f"文件中读取到的 pids 是： {pid}")
             try:
                 procfile = open("/proc/{}/status".format(pid), 'r')

@@ -4,6 +4,7 @@ from mysql import MySql
 
 class RandomCheck:
     def __init__(self, group, mongo, config, logger):
+        # self.group = group
         self.group = int(group)
         self.logger = logger
         self.mongo = mongo

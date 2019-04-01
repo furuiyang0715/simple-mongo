@@ -32,6 +32,7 @@ class MyMongoDB:
                             conf['host'] + ':' + \
                             conf['port'] + '/'
         try:
+            # mongodb://127.0.0.1:27017/
             self.mdb = pymongo.MongoClient(conn_string, connect=False)
         except Exception as e:
             self.logger.warning(f'创建 pymongo 连接失败， 失败的原因是： {e}')
@@ -169,6 +170,7 @@ class MyMongoDB:
         return count
 
     def calibration_last_location(self, last_pos, table_name_list):
+        last_pos = dict() if not last_pos else last_pos
         for table_name in table_name_list:
             coll = self.get_coll(table_name, "datacenter")
             count = self.gen_count(coll)

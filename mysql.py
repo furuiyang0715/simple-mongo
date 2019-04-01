@@ -34,6 +34,7 @@ class MySql:
         return mysql_con
 
     def gen_mysql_info(self, con, table, pos):
+        res = None
         query_sql = """select * from {} limit {}, 1""".format(table, pos)
         try:
             with con.cursor() as cursor:

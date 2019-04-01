@@ -99,7 +99,9 @@ class SyncData:
                     self.logger.info(f"数据库 {table_name} 被drop掉啦")
                     self.logger.info("  ")
                     last_pos[table_name] = -1
-                    cur_pos[table_name] = -1
+                    # 是否有必要将 cur_pos 也改变
+                    # 目的就是最终做到和某一个时间点的 cur_pos 一致
+                    # cur_pos[table_name] = -1
                 except Exception as e:
                     self.logger.warning(f"drop 掉 table {table_name} 时出现了异常: {e}")
                     raise SystemError(e)
@@ -125,6 +127,7 @@ class SyncData:
         # 某个时刻 mysql 数据库中的数量信息
         con = self.mysql.gen_con()
 
+        # cur_pos 是一个基准 在每次 sync_data 期间只生成一次
         cur_pos = self.mysql.gen_sql_table_length(con, tables)
         self.logger.info(f"当前 pos 信息：{cur_pos} ")
 
@@ -274,78 +277,6 @@ class MyMongoDaemon(Daemon):
 
     def write_pid(self, pid):
         open(self.pidfile, 'a+').write("{}\n".format(pid))
-
-
-class MonitorDaemon(Daemon):
-
-    def run(self):
-        sys.stderr = self.log_err
-
-        try:
-            util.find_spec('setproctitle')
-            self.setproctitle = True
-            import setproctitle
-            setproctitle.setproctitle('mymonitor')
-        except ImportError:
-            self.setproctitle = False
-
-        self.logger.info("Monitoring on.")
-        while True:
-            try:
-                self.poke()
-            except Exception as e:
-                logging.warning(f"上报异常 {e}")
-
-            try:
-                self.oversee()
-            except Exception as e:
-                self.logger.warning(f"出现异常 {e}，停止上报")
-                # sys.exit(1)
-
-    def oversee(self):
-        checked_pid_file = config['log']['pidfile']
-        try:
-            with open(checked_pid_file) as f:
-                pids = f.readlines()
-        except IOError:
-            message = "There is not PID file. Daemon is not running\n"
-            # sys.stderr.write(message)
-            # sys.exit(1)
-            self.logger.warning(f"{message}")
-            raise
-        for pid in pids:
-            # sys.stdout.write(f'{pids}')
-            self.logger.info(f"文件中读取到的 pids 是： {pid}")
-            try:
-                procfile = open("/proc/{}/status".format(pid), 'r')
-                procfile.close()
-                message = "There is a process with the PID {}\n".format(pid)
-                # sys.stdout.write(message)
-                self.logger.info(f"{message}, 正常运行.")
-            except IOError:
-                message = "There is not a process with the PID {}\n".format(self.pidfile)
-                # sys.stdout.write(message)
-                raise SystemError(message)
-
-    def poke(self):
-        """戳一下"""
-
-        url = "http://172.17.0.1:9999/metrics"
-        d = {
-            "container_id": "0001",
-            "instance": "sync_daemon",
-            "job": "sync_daemon",
-            "name": "sync_daemon"
-        }
-
-        try:
-            res = requests.post(url, data=json.dumps(d), timeout=0.5)
-        except requests.exceptions.ConnectTimeout:
-            raise SystemError("连接超时")
-        except Exception:
-            raise
-        if res.status_code != 200:
-            raise SystemError(f"状态码异常 {res.status_code}")
 
 
 if __name__ == "__main__":

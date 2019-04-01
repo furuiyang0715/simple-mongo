@@ -125,6 +125,7 @@ class Daemon(object):
             sys.exit(1)
 
         for pid in pids:
+            pid = pid.strip()
             sys.stdout.write(f'{pids}')
             # 此处是 Linux 上的状态信息 MacOS 上的与此有区别
             try:
