@@ -415,7 +415,7 @@ for table in tables:
         complete_data = zip_doc_dict(heads, data)
         final_data = check_each_sql_table_data(complete_data)
         try:
-            exit = get_mcon(table, 'datacenter').find(final_data)
+            exit = list(get_mcon(table, 'datacenter').find(final_data))
         except Exception as e:
             print(f"查找失败 ,失败的原因是 {e}")
             print(f'未找到当前的数据 {table}--{pos}--> {final_data}')

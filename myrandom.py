@@ -41,7 +41,7 @@ class RandomCheck:
             final_data = sql.check_each_sql_table_data(dict_data)
 
             try:
-                flag = coll.find(final_data, {"id"}).next()
+                flag = coll.find(final_data).next()
             except Exception:
                 flag = False
             if not flag:
